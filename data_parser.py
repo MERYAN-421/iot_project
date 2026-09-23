@@ -40,7 +40,7 @@ def parse_temperature_forecast(data: dict) -> pd.DataFrame:
         min_t_periods = elements.get("MinT", [])
         max_t_periods = elements.get("MaxT", [])
 
-        for i, (min_period, max_period) in enumerate(zip(min_t_periods, max_t_periods)):
+        for min_period, max_period in zip(min_t_periods, max_t_periods):
             start_time = min_period.get("startTime", "")
             min_t = min_period.get("parameter", {}).get("parameterName", None)
             max_t = max_period.get("parameter", {}).get("parameterName", None)
