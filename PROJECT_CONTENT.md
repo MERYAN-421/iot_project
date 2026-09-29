@@ -111,13 +111,14 @@ L3_CWA/
 * **Phase 2.1 完成：** SQLite 重複資料處理與 UPSERT 機制 (UNIQUE constraint、`idx_forecast_unique` 索引、`ON CONFLICT DO UPDATE`、分開回報新增/更新/總筆數)
 * **Phase 2.2 完成：** 資料語意精確化與查詢模組建置 (4-part metrics: inserted / changed / unchanged / total；實作支援 Phase 3 的查詢函式)
 * **Phase 3 Milestone 1 完成：** Streamlit Web App (`app.py`、sidebar 22 地區下拉選單、最新預報指標卡片、氣溫趨勢折線圖、詳細資料表，全程透過 `database.py` 存取)
+* **Phase 3.1 完成：** 全台總覽與分頁整合 (`app.py` 整合「全台總覽」與「縣市查詢」雙分頁、極端溫指標卡片支援多地區並列、全台 22 縣市氣溫比較長條圖與總覽表格)
 
 ---
 
 ## 7. Current Task
 
-Phase 3 Milestone 1 已完成。
-下一步：Phase 3 擴充或進入 Phase 4 — Folium 台灣地圖視覺化整合。
+Phase 3.1 已完成。
+下一步：Phase 4 — Folium 台灣地圖視覺化整合（或 Phase 3 介面與指標進階擴充）。
 
 ---
 
@@ -129,7 +130,7 @@ Phase 3 Milestone 1 已完成。
 * [x] 建立第一版可執行程式 (Phase 1)
 * [x] 測試資料流程 (66 rows, 22 regions 驗證通過)
 * [x] Phase 2: SQLite 儲存 (weather.db / TemperatureForecasts - Milestone 1, 2.1 & 2.2 完成)
-* [x] Phase 3: Streamlit Web App (Milestone 1 完成)
+* [x] Phase 3: Streamlit Web App (Milestone 1 & 3.1 全台總覽完成)
 * [ ] Phase 4: Folium 台灣地圖
 * [ ] 建立 Docker 環境
 * [ ] 撰寫 README
@@ -161,12 +162,14 @@ Phase 3 Milestone 1 已完成。
   * 無版本歷程 (No Revision Versioning)：當 CWA 針對同一預報時段更新 `minT` 或 `maxT` 時，以 UPSERT 原地覆寫更新，不保留同一時段修訂前之歷史舊版本
   * 同步指標 (Sync Metrics)：精準劃分「新插入筆數 (inserted)」、「溫度實質變更筆數 (changed)」、「溫度未變更筆數 (unchanged)」與「同步後總筆數 (total)」
   * 查詢介面模組化：提供 `get_forecasts_by_region`、`get_latest_forecasts(periods=3)`、`get_all_regions` 與 `get_forecasts_by_time`，為 Phase 3 Streamlit 奠定標準資料存取層
-* Web Dashboard 架構設計（Phase 3）：
+* Web Dashboard 架構設計（Phase 3 & 3.1）：
   * `app.py` 為 Streamlit 應用進入點
+  * 雙分頁架構：`st.tabs(["🗺️ 全台總覽", "🏙️ 縣市查詢"])`，側邊欄地區選單維持全域可見
   * 嚴格遵守架構分層：`app.py` 完全不含原生 SQL，全數經由 `database.py` 存取
-  * 預報時序遞增 (`startTime ASC`)，最新時段明確由 `df.iloc[-1]` 取得
-  * 折線圖 X 軸於繪圖前轉換為 Pandas datetime (`pd.to_datetime`)
-  * 資料表之時間戳記明確標示為「建立時間 (Created At)」，不混淆為最後更新時間
+  * 全台總覽防禦性設計：具備空資料檢查 (empty guard) 與單一時段唯一性驗證 (`len(distinct_times) == 1`)
+  * 極端溫處理：支援多縣市並列 (ties)，以字串列表清楚標註所有最高溫與最低溫縣市
+  * 比較圖表：跨縣市離散比較採用原生 `st.bar_chart`，維持輕量無額外依賴
+  * 縣市查詢時序分析：折線圖 X 軸預先轉為 Pandas datetime (`pd.to_datetime`)，詳細預報表格時間明確標記為「建立時間 (Created At)」
 
 ---
 
@@ -221,6 +224,14 @@ Phase 3 Milestone 1 已完成。
 * 實作最新時段天氣指標卡片（`df.iloc[-1]` 取得預報時段、最低溫、最高溫）
 * 實作氣溫趨勢折線圖（`pd.to_datetime` 轉換 X 軸）與預報詳細資料表格（時間標記為 Created At）
 * 通過自動化驗證：服務成功啟動 (HTTP 200)、22 個地區選單切換正常、圖表與指標動態更新、無 Traceback
+
+### Phase 3.1 — Nationwide Overview Tab
+* 在 `app.py` 實作 `st.tabs(["🗺️ 全台總覽", "🏙️ 縣市查詢"])` 雙分頁佈局
+* 全台總覽分頁整合 `get_latest_forecasts(periods=1)`，加入空資料防護與單一時段驗證
+* 實作全台最高溫與最低溫指標卡，並完整支援多縣市同溫並列 (ties) 顯示
+* 實作全台 22 縣市氣溫比較長條圖 (`st.bar_chart`) 與全台最新預報表格
+* 驗證縣市切換不影響全台總覽，服務運作正常且無任何 Traceback
+
 
 
 
