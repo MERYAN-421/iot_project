@@ -117,7 +117,7 @@ L3_CWA/
 
 ## 7. Current Task
 
-Phase 4 Milestone 2：介面改版、行政邊界與真實測站已完成本機實作／測試，待部署驗證。
+Phase 4 Milestone 2：介面改版、行政邊界與真實測站已完成本機實作、17 項測試與公開部署驗證。
 Streamlit Community Cloud 公開展示已部署並完成瀏覽器驗證：https://iotproject-hpwvgzzmi2zm7wbuxkerht.streamlit.app/
 使用 cloud_app.py 作為雲端入口；接受展示環境 SQLite 歷史資料不永久保存。
 
@@ -271,3 +271,5 @@ Streamlit Community Cloud 公開展示已部署並完成瀏覽器驗證：https:
 * 雲端預報快取 1 小時，測站快取 10 分鐘（含失敗冷卻）；超過 2 小時或未知時間觀測顯示過期，圖層預設排除。
 * 17 項離線 unittest / AppTest 通過；本機真實同步 66 筆預報與 876 個測站；正式部署前進行瀏覽器點選檢查。
 * Docker 加入 assets 與主題設定；本機 Docker 不可用，容器建置仍未驗證。
+
+* Milestone 2 公開部署已驗證：原 Streamlit 網址顯示「島嶼氣象」、四分頁、22 縣市與 876 個觀測站，無同步錯誤提示。
