@@ -2,7 +2,8 @@
 database.py
 -----------
 SQLite database operations for Taiwan Weather Forecast.
-Handles table initialization, storing parsed weather forecasts, and querying data.
+Handles table initialization, storing parsed weather forecasts via UPSERT,
+and dedicated read/query functions to support Phase 3 (Streamlit).
 
 Database: weather.db
 Table: TemperatureForecasts
@@ -13,11 +14,16 @@ Schema:
   - minT: INTEGER
   - maxT: INTEGER
   - created_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  - UNIQUE(regionName, startTime)  <- composite unique constraint
 
-Milestone 1 behavior:
-  - Appends records to the database.
-  - Note: Rerunning save_forecasts (or main.py) will insert another 66 rows each time.
-    Deduplication and upsert logic will be introduced in future milestones.
+Unique Index:
+  - idx_forecast_unique ON TemperatureForecasts (regionName, startTime)
+
+Data Model Semantics:
+  - id remains the auto-increment primary key.
+  - Exactly one latest forecast per (regionName, startTime) composite unique constraint.
+  - Old forecast periods accumulate as historical records across time.
+  - Revisions of the same period by CWA update minT/maxT in-place (no revision versioning).
 """
 
 import sqlite3
@@ -29,7 +35,8 @@ DEFAULT_DB_PATH = "weather.db"
 def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
     """
     Initializes the SQLite database and creates the TemperatureForecasts
-    table if it does not exist.
+    table and unique index if they do not exist.
+    Verifies that no duplicate keys exist before creating the unique index.
     """
     create_table_sql = """
     CREATE TABLE IF NOT EXISTS TemperatureForecasts (
@@ -38,29 +45,66 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
         startTime TEXT NOT NULL,
         minT INTEGER,
         maxT INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (regionName, startTime)
     );
     """
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute(create_table_sql)
+
+        # Requirement: verify no duplicate keys exist before creating the unique index
+        cursor.execute("""
+            SELECT regionName, startTime, COUNT(*)
+            FROM TemperatureForecasts
+            GROUP BY regionName, startTime
+            HAVING COUNT(*) > 1;
+        """)
+        duplicates = cursor.fetchall()
+        if duplicates:
+            print(
+                f"[WARNING] Found {len(duplicates)} duplicate (regionName, startTime) groups. "
+                "Cleaning up older duplicates to enable unique index..."
+            )
+            cursor.execute("""
+                DELETE FROM TemperatureForecasts
+                WHERE id NOT IN (
+                    SELECT MAX(id)
+                    FROM TemperatureForecasts
+                    GROUP BY regionName, startTime
+                );
+            """)
+            conn.commit()
+
+        # Create unique index for backward compatibility with existing databases
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_forecast_unique
+            ON TemperatureForecasts (regionName, startTime);
+        """)
         conn.commit()
 
 
-def save_forecasts(df: pd.DataFrame, db_path: str = DEFAULT_DB_PATH) -> int:
+def save_forecasts(df: pd.DataFrame, db_path: str = DEFAULT_DB_PATH) -> dict:
     """
-    Saves parsed weather forecast DataFrame into SQLite TemperatureForecasts table.
-    
-    Append behavior:
-      Inserts all rows from the DataFrame. Note that rerunning this function
-      will insert another set of records (e.g. 66 rows) each time.
+    Saves parsed weather forecast DataFrame into SQLite TemperatureForecasts table
+    using UPSERT (INSERT ... ON CONFLICT DO UPDATE).
+
+    Distinguishes:
+      - inserted: (regionName, startTime) is new to the database
+      - changed: existing row where minT or maxT differs from stored value
+      - unchanged: existing row where minT and maxT match stored value
+      - total: total rows in database after sync
 
     Returns:
-      Number of rows inserted.
+      dict: {"inserted": int, "changed": int, "unchanged": int, "total": int}
     """
-    insert_sql = """
+    upsert_sql = """
     INSERT INTO TemperatureForecasts (regionName, startTime, minT, maxT)
-    VALUES (?, ?, ?, ?);
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(regionName, startTime)
+    DO UPDATE SET
+        minT = excluded.minT,
+        maxT = excluded.maxT;
     """
     records = [
         (
@@ -74,10 +118,46 @@ def save_forecasts(df: pd.DataFrame, db_path: str = DEFAULT_DB_PATH) -> int:
 
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
-        cursor.executemany(insert_sql, records)
+
+        # Fetch existing records to categorize inserted / changed / unchanged
+        cursor.execute("SELECT regionName, startTime, minT, maxT FROM TemperatureForecasts;")
+        stored = {
+            (row[0], row[1]): (row[2], row[3])
+            for row in cursor.fetchall()
+        }
+
+        inserted_count = 0
+        changed_count = 0
+        unchanged_count = 0
+
+        for rec in records:
+            key = (rec[0], rec[1])
+            min_t = rec[2]
+            max_t = rec[3]
+
+            if key not in stored:
+                inserted_count += 1
+                stored[key] = (min_t, max_t)
+            else:
+                stored_min, stored_max = stored[key]
+                if stored_min != min_t or stored_max != max_t:
+                    changed_count += 1
+                    stored[key] = (min_t, max_t)
+                else:
+                    unchanged_count += 1
+
+        cursor.executemany(upsert_sql, records)
         conn.commit()
 
-    return len(records)
+        cursor.execute("SELECT COUNT(*) FROM TemperatureForecasts;")
+        total_count = cursor.fetchone()[0]
+
+    return {
+        "inserted": inserted_count,
+        "changed": changed_count,
+        "unchanged": unchanged_count,
+        "total": total_count,
+    }
 
 
 def get_forecasts(db_path: str = DEFAULT_DB_PATH, limit: int = 10) -> pd.DataFrame:
@@ -105,3 +185,78 @@ def get_total_count(db_path: str = DEFAULT_DB_PATH) -> int:
         cursor.execute("SELECT COUNT(*) FROM TemperatureForecasts;")
         count = cursor.fetchone()[0]
     return count
+
+
+def get_forecasts_by_region(region_name: str, db_path: str = DEFAULT_DB_PATH) -> pd.DataFrame:
+    """
+    Fetches all forecast periods for a specific county/city, ordered by startTime ASC.
+    Supports Streamlit region trend charts and timeline tables.
+    """
+    query_sql = """
+    SELECT id, regionName, startTime, minT, maxT, created_at
+    FROM TemperatureForecasts
+    WHERE regionName = ?
+    ORDER BY startTime ASC;
+    """
+    with sqlite3.connect(db_path) as conn:
+        df = pd.read_sql_query(query_sql, conn, params=(region_name,))
+    return df
+
+
+def get_latest_forecasts(periods: int = 3, db_path: str = DEFAULT_DB_PATH) -> pd.DataFrame:
+    """
+    Fetches all regions belonging to the latest N distinct forecast periods.
+    Orders the final result by startTime ASC, regionName ASC.
+    Supports Streamlit overview tables and map visualizer.
+    """
+    query_sql = """
+    WITH latest_periods AS (
+        SELECT DISTINCT startTime
+        FROM TemperatureForecasts
+        ORDER BY startTime DESC
+        LIMIT ?
+    )
+    SELECT f.id, f.regionName, f.startTime, f.minT, f.maxT, f.created_at
+    FROM TemperatureForecasts f
+    JOIN latest_periods lp ON f.startTime = lp.startTime
+    ORDER BY f.startTime ASC, f.regionName ASC;
+    """
+    with sqlite3.connect(db_path) as conn:
+        df = pd.read_sql_query(query_sql, conn, params=(periods,))
+    return df
+
+
+def get_all_regions(db_path: str = DEFAULT_DB_PATH) -> list[str]:
+    """
+    Returns a sorted list of distinct region names stored in the database.
+    Supports Streamlit dropdown / selectbox widgets.
+    """
+    query_sql = """
+    SELECT DISTINCT regionName
+    FROM TemperatureForecasts
+    ORDER BY regionName ASC;
+    """
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(query_sql)
+        regions = [row[0] for row in cursor.fetchall()]
+    return regions
+
+
+def get_forecasts_by_time(start_time: str, db_path: str = DEFAULT_DB_PATH) -> pd.DataFrame:
+    """
+    Fetches all regional forecasts for a specific forecast startTime.
+    Orders results by regionName ASC.
+    Supports Streamlit cross-sectional time-slice filter and map slider.
+    """
+    query_sql = """
+    SELECT id, regionName, startTime, minT, maxT, created_at
+    FROM TemperatureForecasts
+    WHERE startTime = ?
+    ORDER BY regionName ASC;
+    """
+    with sqlite3.connect(db_path) as conn:
+        df = pd.read_sql_query(query_sql, conn, params=(start_time,))
+    return df
+
+

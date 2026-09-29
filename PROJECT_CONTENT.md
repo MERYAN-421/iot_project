@@ -80,13 +80,14 @@ L3_CWA/
 ├── .env                  ← API Key (本機存放，不進 Git)
 ├── .env.example          ← Key 格式範本 (可進 Git)
 ├── .gitignore
-├── requirements.txt      ← requests, pandas, python-dotenv, certifi, truststore
+├── requirements.txt      ← requests, pandas, python-dotenv, certifi, truststore, streamlit
 ├── config.py             ← 從 .env 載入 CWA_API_KEY
 ├── cwa_api.py            ← 呼叫 CWA F-C0032-001 API，回傳 JSON
 ├── data_parser.py        ← 解析 JSON，提取 MinT/MaxT → Pandas DataFrame
 ├── database.py           ← SQLite 資料庫操作 (init_db, save_forecasts, get_forecasts, get_total_count)
 ├── weather.db            ← 本機 SQLite 資料庫 (不進 Git)
-├── main.py               ← 程式進入點
+├── main.py               ← 後端資料同步進入點 (ETL / Sync Pipeline)
+├── app.py                ← 前端 Streamlit Web Dashboard 進入點
 ├── PROJECT_CONTENT.md    ← AI context 文件 (本文件)
 └── myPlan/
     └── project_plan.md   ← 整體專案計畫
@@ -107,13 +108,16 @@ L3_CWA/
 * **Phase 1 完成：** CWA API → JSON → Pandas DataFrame (66 rows, 22 regions)
 * **Phase 1.5 完成：** SSL 調查與修正、程式碼清理、文件更新
 * **Phase 2 Milestone 1 完成：** SQLite 整合 (`database.py`、`weather.db`、`TemperatureForecasts` 表建立、66 筆資料存入與查詢驗證)
+* **Phase 2.1 完成：** SQLite 重複資料處理與 UPSERT 機制 (UNIQUE constraint、`idx_forecast_unique` 索引、`ON CONFLICT DO UPDATE`、分開回報新增/更新/總筆數)
+* **Phase 2.2 完成：** 資料語意精確化與查詢模組建置 (4-part metrics: inserted / changed / unchanged / total；實作支援 Phase 3 的查詢函式)
+* **Phase 3 Milestone 1 完成：** Streamlit Web App (`app.py`、sidebar 22 地區下拉選單、最新預報指標卡片、氣溫趨勢折線圖、詳細資料表，全程透過 `database.py` 存取)
 
 ---
 
 ## 7. Current Task
 
-Phase 2 Milestone 1 已完成。
-下一步：Phase 2 後續規劃（去重/Upsert 機制、資料清洗與查詢介面）或進入 Phase 3（Streamlit Web App）。
+Phase 3 Milestone 1 已完成。
+下一步：Phase 3 擴充或進入 Phase 4 — Folium 台灣地圖視覺化整合。
 
 ---
 
@@ -124,8 +128,8 @@ Phase 2 Milestone 1 已完成。
 * [x] 設計 Python 專案結構
 * [x] 建立第一版可執行程式 (Phase 1)
 * [x] 測試資料流程 (66 rows, 22 regions 驗證通過)
-* [x] Phase 2: SQLite 儲存 (weather.db / TemperatureForecasts - Milestone 1 完成)
-* [ ] Phase 3: Streamlit Web App
+* [x] Phase 2: SQLite 儲存 (weather.db / TemperatureForecasts - Milestone 1, 2.1 & 2.2 完成)
+* [x] Phase 3: Streamlit Web App (Milestone 1 完成)
 * [ ] Phase 4: Folium 台灣地圖
 * [ ] 建立 Docker 環境
 * [ ] 撰寫 README
@@ -148,11 +152,21 @@ Phase 2 Milestone 1 已完成。
 * SSL 處理策略：先嘗試 certifi，失敗後 fallback 至 `verify=False` 並印出警告
   * 測試結果：`verify=True`、`certifi`、`truststore` 皆因 CWA 憑證缺少 SKI (RFC 5280) 而失敗
   * `verify=False` 為目前唯一可用方案，待 CWA 更新憑證後應改回 `verify=True`
-* 資料庫設計：
+* 資料庫與資料模型設計（Data Model Semantics）：
   * 資料庫檔案：`weather.db`（已列入 `.gitignore`）
-  * 資料表：`TemperatureForecasts` (`id` INTEGER PK AUTOINCREMENT, `regionName` TEXT, `startTime` TEXT, `minT` INTEGER, `maxT` INTEGER, `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
-  * Milestone 1 寫入行為為 append 模式；每次執行 `main.py` 會新增 66 筆資料
-  * 查詢預設採 `ORDER BY id DESC` 以利驗證最新插入的預報資料
+  * 主鍵 (Primary Key)：`id INTEGER PRIMARY KEY AUTOINCREMENT`，維持單一自增主鍵
+  * 複合唯一限制 (Composite Unique Constraint)：`UNIQUE(regionName, startTime)`，確保同一地區與同一預報時段僅有一筆最新紀錄
+  * 唯一索引：`idx_forecast_unique ON TemperatureForecasts (regionName, startTime)`，向下相容現有資料庫
+  * 歷史累積性：舊預報時段持續保留於資料庫中，隨著時間推移自然形成歷史預報資料庫
+  * 無版本歷程 (No Revision Versioning)：當 CWA 針對同一預報時段更新 `minT` 或 `maxT` 時，以 UPSERT 原地覆寫更新，不保留同一時段修訂前之歷史舊版本
+  * 同步指標 (Sync Metrics)：精準劃分「新插入筆數 (inserted)」、「溫度實質變更筆數 (changed)」、「溫度未變更筆數 (unchanged)」與「同步後總筆數 (total)」
+  * 查詢介面模組化：提供 `get_forecasts_by_region`、`get_latest_forecasts(periods=3)`、`get_all_regions` 與 `get_forecasts_by_time`，為 Phase 3 Streamlit 奠定標準資料存取層
+* Web Dashboard 架構設計（Phase 3）：
+  * `app.py` 為 Streamlit 應用進入點
+  * 嚴格遵守架構分層：`app.py` 完全不含原生 SQL，全數經由 `database.py` 存取
+  * 預報時序遞增 (`startTime ASC`)，最新時段明確由 `df.iloc[-1]` 取得
+  * 折線圖 X 軸於繪圖前轉換為 Pandas datetime (`pd.to_datetime`)
+  * 資料表之時間戳記明確標示為「建立時間 (Created At)」，不混淆為最後更新時間
 
 ---
 
@@ -182,4 +196,32 @@ Phase 2 Milestone 1 已完成。
 * 更新 `main.py` 整合端到端流程：API 取得 → 解析 → 存入 SQLite → 查詢最新 5 筆 sample 驗證
 * 實施 append 模式並驗證 66 筆資料成功寫入與讀出 (`ORDER BY id DESC`)
 * 確認 `weather.db` 已被 `.gitignore` 排除不進 Git
+
+### Phase 2.1 — SQLite UPSERT & Deduplication
+* 在 `database.py` 的 `init_db()` 加入 `UNIQUE(regionName, startTime)` constraint 與 `idx_forecast_unique` 索引，並在建立索引前自動檢查既有重複 key
+* 重構 `save_forecasts()` 為 SQLite UPSERT 語法 (`ON CONFLICT DO UPDATE SET minT, maxT`)，保持氣溫預測為 CWA 最新版本
+* 實作分類比對機制，獨立統計並回傳 `inserted`、`updated` 與 `total` 筆數
+* 更新 `main.py` 輸出，清楚呈現同步統計
+* 實測二次執行：確認 0 筆新增、66 筆更新、資料庫總數維持 66 筆不膨脹
+
+### Phase 2.2 — Data Semantics & Query Functions
+* 優化同步指標：精確區分 `inserted`、`changed`（`minT` 或 `maxT` 實際有異動）、`unchanged`（完全一致）與 `total`
+* 實作 Phase 3 查詢函式：
+  * `get_forecasts_by_region(region_name)`：按 `startTime ASC` 查詢單一地區時序預報
+  * `get_latest_forecasts(periods=3)`：取得最新 N 個時段的所有地區預報，按 `startTime ASC, regionName ASC` 排序
+  * `get_all_regions()`：取得排序後的不重複地區清單（供 Streamlit 下拉選單使用）
+  * `get_forecasts_by_time(start_time)`：按指定時段切片查詢全台預報（供地圖或時段篩選使用）
+* 明確界定資料模型語意：複合唯一限制 (composite unique constraint) 非複合主鍵；舊時段累加保存；同一時段修訂採原地更新不留歷程版本
+* 通過全方位測試（實測同步、重複同步、手動變更溫度、查詢函式驗證、Git ignore 狀態確認）
+
+### Phase 3 Milestone 1 — Streamlit Web App
+* 將 `streamlit` 加入 `requirements.txt`
+* 建立 `app.py` 作為 Web Dashboard 進入點，嚴格禁止原生 SQL，全數呼叫 `database.py` 模組
+* 實作側邊欄 22 地區 `st.sidebar.selectbox` 下拉選單（預設臺北市）
+* 實作最新時段天氣指標卡片（`df.iloc[-1]` 取得預報時段、最低溫、最高溫）
+* 實作氣溫趨勢折線圖（`pd.to_datetime` 轉換 X 軸）與預報詳細資料表格（時間標記為 Created At）
+* 通過自動化驗證：服務成功啟動 (HTTP 200)、22 個地區選單切換正常、圖表與指標動態更新、無 Traceback
+
+
+
 
