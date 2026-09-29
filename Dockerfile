@@ -6,6 +6,8 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && useradd --create-home weather \
     && mkdir -p /data && chown weather:weather /data
 COPY *.py ./
+COPY assets ./assets
+COPY .streamlit/config.toml ./.streamlit/config.toml
 USER weather
 EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \

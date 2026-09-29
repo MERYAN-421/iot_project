@@ -58,13 +58,13 @@ class ForecastMapTests(unittest.TestCase):
         for region in REGIONS:
             self.assertIn(region, html)
         self.assertIn(self.times[0], html)
-        self.assertIn("無資料", html)
-        self.assertIn("gray", html)
+        self.assertIn("—", html)
+        self.assertIn("#8396a1", html)
         self.assertIn("fitBounds", html)
 
     def run_app(self, callback):
         names = ["init_db", "get_all_regions", "get_forecasts_by_region",
-                 "get_latest_forecasts", "get_forecasts_by_time", "get_available_forecast_times"]
+                 "get_latest_forecasts", "get_forecasts_by_time", "get_available_forecast_times", "get_observations"]
         from contextlib import ExitStack
         with ExitStack() as stack:
             for name in names:
@@ -77,8 +77,8 @@ class ForecastMapTests(unittest.TestCase):
         def check(app):
             app.run()
             self.assertFalse(app.exception)
-            self.assertEqual([t.label for t in app.tabs], ["🗺️ 全台總覽", "🏙️ 縣市查詢", "🌏 台灣地圖"])
-            self.assertEqual(app.selectbox(key="map_forecast_time").value, self.times[-1])
+            self.assertEqual([t.label for t in app.tabs], ["🌏 天氣地圖", "☀️ 全台總覽", "📍 縣市預報", "📡 即時測站"])
+            self.assertIn(app.selectbox(key="map_forecast_time").value, self.times)
             app.selectbox(key="map_forecast_time").select(self.times[0]).run()
             self.assertFalse(app.exception)
             self.assertTrue(any(self.times[0] in c.value and "22 / 22" in c.value for c in app.caption))
@@ -88,7 +88,7 @@ class ForecastMapTests(unittest.TestCase):
             payload = json.loads(component.proto.json_args)
             self.assertIn(self.times[0], payload["script"])
             self.assertNotIn(self.times[1], payload["script"])
-            self.assertIn("27 °C", payload["script"])
+            self.assertIn("20–27", payload["script"])
             app.sidebar.selectbox[0].select("金門縣").run()
             self.assertFalse(app.exception)
             self.assertEqual(app.selectbox(key="map_forecast_time").value, self.times[0])
@@ -99,7 +99,37 @@ class ForecastMapTests(unittest.TestCase):
         def check(app):
             app.run()
             self.assertFalse(app.exception)
-            self.assertIn("main.py", app.error[0].value)
+            self.assertIn("main.py", app.info[0].value)
+        self.run_app(check)
+
+    def test_map_click_updates_city_and_survives_rerun(self):
+        def check(app):
+            with patch("streamlit_folium.st_folium", return_value={"last_object_clicked_tooltip":"金門縣", "last_object_clicked":{"lat":24.4,"lng":118.3}}):
+                app.run()
+                self.assertFalse(app.exception)
+                self.assertEqual(app.selectbox(key="region_picker").value, "金門縣")
+                app.run()
+                self.assertFalse(app.exception)
+                self.assertEqual(app.selectbox(key="region_picker").value, "金門縣")
+        self.run_app(check)
+
+    def test_station_search_and_map_mode(self):
+        from database import save_observations
+        from data_parser import parse_observations
+        from test_explorer import station
+        rows = parse_observations({"records":{"Station":[station()]}})
+        save_observations(rows, self.db)
+        def check(app):
+            app.run()
+            self.assertFalse(app.exception)
+            app.radio(key="map_mode").set_value("測站實況").run()
+            self.assertFalse(app.exception)
+            app.text_input[0].set_value("找不到的測站").run()
+            self.assertFalse(app.exception)
+            self.assertTrue(any("找到 0 站" in c.value for c in app.caption))
+            app.text_input[0].set_value("測試站").run()
+            self.assertFalse(app.exception)
+            self.assertTrue(any("找到 1 站" in c.value for c in app.caption))
         self.run_app(check)
 
     def test_cloud_entrypoint_and_failed_sync_keep_dashboard(self):
@@ -107,17 +137,17 @@ class ForecastMapTests(unittest.TestCase):
         cloud = APP.with_name("cloud_app.py")
         def check(_app):
             st.cache_data.clear()
-            with patch("sync_service.sync_forecasts", return_value={}) as sync:
+            with patch("sync_service.sync_forecasts", return_value={}) as sync, patch("sync_service.sync_observations", return_value=0):
                 app = AppTest.from_file(str(cloud), default_timeout=30).run()
                 self.assertFalse(app.exception)
-                self.assertEqual(len(app.tabs), 3)
+                self.assertEqual(len(app.tabs), 4)
                 app.run()
                 self.assertEqual(sync.call_count, 1)
             st.cache_data.clear()
-            with patch("sync_service.sync_forecasts", side_effect=RuntimeError("SECRET_REQUEST_URL")):
+            with patch("sync_service.sync_forecasts", side_effect=RuntimeError("SECRET_REQUEST_URL")), patch("sync_service.sync_observations", side_effect=RuntimeError("SECRET")):
                 app = AppTest.from_file(str(cloud), default_timeout=30).run()
                 self.assertFalse(app.exception)
-                self.assertEqual(len(app.tabs), 3)
+                self.assertEqual(len(app.tabs), 4)
                 self.assertIn("同步暫時失敗", app.warning[0].value)
                 self.assertNotIn("SECRET_REQUEST_URL", app.warning[0].value)
             st.cache_data.clear()

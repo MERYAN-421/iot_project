@@ -12,3 +12,12 @@ def sync_forecasts(db_path: str = DEFAULT_DB_PATH) -> dict:
         raise ValueError("CWA returned no temperature forecasts")
     init_db(db_path)
     return save_forecasts(forecasts, db_path)
+
+
+def sync_observations(db_path: str = DEFAULT_DB_PATH) -> int:
+    from cwa_api import fetch_weather_data
+    from data_parser import parse_observations
+    from database import save_observations
+    observations = parse_observations(fetch_weather_data("O-A0001-001"))
+    init_db(db_path)
+    return save_observations(observations, db_path)

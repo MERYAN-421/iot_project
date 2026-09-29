@@ -84,6 +84,17 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS idx_forecast_unique
             ON TemperatureForecasts (regionName, startTime);
         """)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(TemperatureForecasts)")}
+        for column, kind in [("endTime", "TEXT"), ("weather", "TEXT"), ("pop", "REAL"), ("comfort", "TEXT")]:
+            if column not in columns:
+                conn.execute(f"ALTER TABLE TemperatureForecasts ADD COLUMN {column} {kind}")
+        conn.execute("""CREATE TABLE IF NOT EXISTS StationObservations (
+            stationId TEXT PRIMARY KEY, stationName TEXT NOT NULL, regionName TEXT,
+            townName TEXT, latitude REAL, longitude REAL, observedAt TEXT,
+            temperature REAL, humidity REAL, windSpeed REAL, precipitation REAL,
+            weather TEXT, rainTrace INTEGER DEFAULT 0,
+            fetchedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""")
         conn.commit()
 
 
@@ -102,12 +113,13 @@ def save_forecasts(df: pd.DataFrame, db_path: str = DEFAULT_DB_PATH) -> dict:
       dict: {"inserted": int, "changed": int, "unchanged": int, "total": int}
     """
     upsert_sql = """
-    INSERT INTO TemperatureForecasts (regionName, startTime, minT, maxT)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO TemperatureForecasts (regionName, startTime, minT, maxT, endTime, weather, pop, comfort)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(regionName, startTime)
     DO UPDATE SET
         minT = excluded.minT,
-        maxT = excluded.maxT;
+        maxT = excluded.maxT, endTime = excluded.endTime,
+        weather = excluded.weather, pop = excluded.pop, comfort = excluded.comfort;
     """
     records = [
         (
@@ -115,6 +127,8 @@ def save_forecasts(df: pd.DataFrame, db_path: str = DEFAULT_DB_PATH) -> dict:
             row["startTime"],
             int(row["minT"]) if pd.notna(row["minT"]) else None,
             int(row["maxT"]) if pd.notna(row["maxT"]) else None,
+            *[row.get(field) if pd.notna(row.get(field)) else None
+              for field in ("endTime", "weather", "pop", "comfort")],
         )
         for _, row in df.iterrows()
     ]
@@ -123,9 +137,9 @@ def save_forecasts(df: pd.DataFrame, db_path: str = DEFAULT_DB_PATH) -> dict:
         cursor = conn.cursor()
 
         # Fetch existing records to categorize inserted / changed / unchanged
-        cursor.execute("SELECT regionName, startTime, minT, maxT FROM TemperatureForecasts;")
+        cursor.execute("SELECT regionName, startTime, minT, maxT, endTime, weather, pop, comfort FROM TemperatureForecasts;")
         stored = {
-            (row[0], row[1]): (row[2], row[3])
+            (row[0], row[1]): tuple(row[2:])
             for row in cursor.fetchall()
         }
 
@@ -140,12 +154,11 @@ def save_forecasts(df: pd.DataFrame, db_path: str = DEFAULT_DB_PATH) -> dict:
 
             if key not in stored:
                 inserted_count += 1
-                stored[key] = (min_t, max_t)
+                stored[key] = tuple(rec[2:])
             else:
-                stored_min, stored_max = stored[key]
-                if stored_min != min_t or stored_max != max_t:
+                if stored[key] != tuple(rec[2:]):
                     changed_count += 1
-                    stored[key] = (min_t, max_t)
+                    stored[key] = tuple(rec[2:])
                 else:
                     unchanged_count += 1
 
@@ -169,7 +182,7 @@ def get_forecasts(db_path: str = DEFAULT_DB_PATH, limit: int = 10) -> pd.DataFra
     Returns a Pandas DataFrame.
     """
     query_sql = """
-    SELECT id, regionName, startTime, minT, maxT, created_at
+    SELECT id, regionName, startTime, minT, maxT, created_at, endTime, weather, pop, comfort
     FROM TemperatureForecasts
     ORDER BY id DESC
     LIMIT ?;
@@ -196,7 +209,7 @@ def get_forecasts_by_region(region_name: str, db_path: str = DEFAULT_DB_PATH) ->
     Supports Streamlit region trend charts and timeline tables.
     """
     query_sql = """
-    SELECT id, regionName, startTime, minT, maxT, created_at
+    SELECT id, regionName, startTime, minT, maxT, created_at, endTime, weather, pop, comfort
     FROM TemperatureForecasts
     WHERE regionName = ?
     ORDER BY startTime ASC;
@@ -219,7 +232,7 @@ def get_latest_forecasts(periods: int = 3, db_path: str = DEFAULT_DB_PATH) -> pd
         ORDER BY startTime DESC
         LIMIT ?
     )
-    SELECT f.id, f.regionName, f.startTime, f.minT, f.maxT, f.created_at
+    SELECT f.id, f.regionName, f.startTime, f.minT, f.maxT, f.created_at, f.endTime, f.weather, f.pop, f.comfort
     FROM TemperatureForecasts f
     JOIN latest_periods lp ON f.startTime = lp.startTime
     ORDER BY f.startTime ASC, f.regionName ASC;
@@ -253,7 +266,7 @@ def get_forecasts_by_time(start_time: str, db_path: str = DEFAULT_DB_PATH) -> pd
     Supports Streamlit cross-sectional time-slice filter and map slider.
     """
     query_sql = """
-    SELECT id, regionName, startTime, minT, maxT, created_at
+    SELECT id, regionName, startTime, minT, maxT, created_at, endTime, weather, pop, comfort
     FROM TemperatureForecasts
     WHERE startTime = ?
     ORDER BY regionName ASC;
@@ -270,3 +283,32 @@ def get_available_forecast_times(db_path: str = DEFAULT_DB_PATH) -> list[str]:
             "SELECT DISTINCT startTime FROM TemperatureForecasts ORDER BY startTime DESC"
         )]
 
+
+
+STATION_COLUMNS = ["stationId", "stationName", "regionName", "townName", "latitude", "longitude",
+                   "observedAt", "temperature", "humidity", "windSpeed", "precipitation", "weather", "rainTrace"]
+
+
+def save_observations(df: pd.DataFrame, db_path: str = DEFAULT_DB_PATH) -> int:
+    """Atomically replace a validated latest station snapshot; empty responses keep old data."""
+    if df.empty:
+        raise ValueError("Empty observation snapshot")
+    records = [tuple(None if pd.isna(v) else v for v in row)
+               for row in df[STATION_COLUMNS].itertuples(index=False, name=None)]
+    with closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute("DELETE FROM StationObservations")
+        conn.executemany(
+            f"INSERT INTO StationObservations ({','.join(STATION_COLUMNS)}) VALUES ({','.join('?' for _ in STATION_COLUMNS)})",
+            records,
+        )
+    return len(records)
+
+
+def get_observations(region_name: str | None = None, db_path: str = DEFAULT_DB_PATH) -> pd.DataFrame:
+    query = "SELECT * FROM StationObservations"
+    params = ()
+    if region_name:
+        query += " WHERE regionName = ?"
+        params = (region_name,)
+    with closing(sqlite3.connect(db_path)) as conn:
+        return pd.read_sql_query(query + " ORDER BY regionName, stationName", conn, params=params)

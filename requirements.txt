@@ -6,3 +6,4 @@ truststore
 streamlit
 folium
 streamlit-folium
+altair

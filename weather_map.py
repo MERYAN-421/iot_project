@@ -49,25 +49,57 @@ def format_temperature(value: float) -> str:
     return "無資料" if pd.isna(value) else f"{value:g} °C"
 
 
-def build_weather_map(forecasts: pd.DataFrame) -> folium.Map:
-    """Render one marker per known region from a single forecast slice."""
-    weather_map = folium.Map(location=[23.7, 120.95], zoom_start=7)
-    for row in forecasts.itertuples(index=False):
-        coordinates = TAIWAN_REGION_COORDINATES.get(row.regionName)
-        if coordinates is None:
-            continue
-        region = escape(str(row.regionName))
-        period = escape(str(row.startTime))
-        temperatures = f"{format_temperature(row.minT)} ~ {format_temperature(row.maxT)}"
-        folium.Marker(
-            location=coordinates,
-            tooltip=f"{region}: {temperatures}",
-            popup=folium.Popup(
-                f"<b>{region}</b><br>預報時段: {period}<br>氣溫範圍: {temperatures}",
-                max_width=320,
-            ),
-            icon=folium.Icon(color=temperature_color(row.maxT), icon="info-sign"),
+PALETTE = {"red": "#dd654f", "orange": "#e4a346", "green": "#48a58d", "blue": "#4b95c8", "gray": "#8396a1"}
+
+
+def build_weather_map(forecasts: pd.DataFrame, selected_region=None, observations=None,
+                      mode="forecast", focus=False) -> folium.Map:
+    from geography import county_boundaries
+    from ui import forecast_card, observation_card, value
+    from folium.plugins import MarkerCluster, Fullscreen
+
+    weather_map = folium.Map(location=[23.7, 120.95], zoom_start=7, tiles="OpenStreetMap", control_scale=True)
+    Fullscreen(position="topright").add_to(weather_map)
+    rows = {row["regionName"]: row for row in forecasts.to_dict("records")}
+    selected_bounds = None
+    for feature in county_boundaries()["features"]:
+        name = feature["properties"]["regionName"]
+        row = rows.get(name)
+        selected = name == selected_region
+        color = PALETTE[temperature_color(row.get("maxT"))] if row else "#bdccd4"
+        layer = folium.GeoJson(
+            feature, name=name,
+            style_function=lambda f, c=color, active=selected: {
+                "fillColor": c, "color": "#0c6378" if active else "#7895a4",
+                "weight": 3.5 if active else 1, "fillOpacity": .33 if active else .10,
+            },
+            highlight_function=lambda f: {"weight": 3, "color": "#127e91", "fillOpacity": .38},
+            tooltip=folium.Tooltip(name, sticky=True),
+            popup=folium.Popup(forecast_card(row, True), max_width=320) if row else folium.Popup(name),
         ).add_to(weather_map)
-    # Include Kinmen and Matsu in the initial viewport, including on narrow screens.
-    weather_map.fit_bounds([[22.0, 118.15], [26.4, 122.1]])
+        if selected:
+            selected_bounds = layer.get_bounds()
+    if mode == "forecast":
+        for name, row in rows.items():
+            coordinates = TAIWAN_REGION_COORDINATES.get(name)
+            if not coordinates:
+                continue
+            color = PALETTE[temperature_color(row.get("maxT"))]
+            label = escape(name)
+            folium.Marker(
+                coordinates, tooltip=label,
+                popup=folium.Popup(forecast_card(row, True), max_width=320),
+                icon=folium.DivIcon(icon_size=(74, 40), icon_anchor=(37, 20), html=f'''<div style="background:white;border:2px solid {color};border-radius:12px;box-shadow:0 3px 12px #1b394333;text-align:center;padding:4px 3px;font-family:sans-serif;color:#234452;font-size:10px;line-height:1.4">{label}<br><b style="font-size:15px;color:{color}">{value(row.get('maxT'))}°</b></div>'''),
+            ).add_to(weather_map)
+    elif observations is not None and not observations.empty:
+        cluster = MarkerCluster(name="中央氣象署觀測站", options={"maxClusterRadius": 38, "disableClusteringAtZoom": 11}).add_to(weather_map)
+        for row in observations.to_dict("records"):
+            color = PALETTE[temperature_color(row.get("temperature"))]
+            folium.Marker(
+                [row["latitude"], row["longitude"]],
+                tooltip=f"{escape(row['regionName'])} · {escape(row['stationName'])} · {value(row['temperature'], '°C')}",
+                popup=folium.Popup(observation_card(row), max_width=310),
+                icon=folium.DivIcon(icon_size=(36, 28), icon_anchor=(18, 14), html=f'''<div style="border-radius:9px;padding:4px 1px;background:{color};border:2px solid white;box-shadow:0 2px 8px #17344640;color:white;text-align:center;font:bold 11px sans-serif">{value(row['temperature'])}</div>'''),
+            ).add_to(cluster)
+    weather_map.fit_bounds(selected_bounds if focus and selected_bounds else [[21.85, 118.15], [26.4, 122.1]], padding=(20, 20))
     return weather_map

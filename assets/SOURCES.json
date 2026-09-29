@@ -1,0 +1,8 @@
+{
+  "source": "https://cdn.jsdelivr.net/npm/taiwan-atlas/counties-10t.json",
+  "upstream": "https://github.com/dkaoster/taiwan-atlas",
+  "retrieved": "2026-09-30",
+  "sha256": "b1074475e095e3ebf3776748c477aad2aaa74e8f502e88c534e4cee57ae52fa8",
+  "description": "Taiwan Atlas simplified county boundaries derived from Ministry of the Interior data. Display only, not a legal boundary survey. Names normalized from 台 to 臺 at runtime.",
+  "license": "MIT; see taiwan-atlas-LICENSE.txt"
+}

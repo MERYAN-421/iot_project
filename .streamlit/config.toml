@@ -3,3 +3,11 @@ gatherUsageStats = false
 
 [client]
 showErrorDetails = "none"
+
+[theme]
+base = "light"
+primaryColor = "#157e8d"
+backgroundColor = "#f4f7fa"
+secondaryBackgroundColor = "#eaf0f4"
+textColor = "#183447"
+font = "sans serif"

@@ -117,7 +117,7 @@ L3_CWA/
 
 ## 7. Current Task
 
-Phase 4 Milestone 1 已完成並通過測試。
+Phase 4 Milestone 2：介面改版、行政邊界與真實測站已完成本機實作／測試，待部署驗證。
 Streamlit Community Cloud 公開展示已部署並完成瀏覽器驗證：https://iotproject-hpwvgzzmi2zm7wbuxkerht.streamlit.app/
 使用 cloud_app.py 作為雲端入口；接受展示環境 SQLite 歷史資料不永久保存。
 
@@ -258,3 +258,16 @@ Streamlit Community Cloud 公開展示已部署並完成瀏覽器驗證：https:
 * 全台總覽顯示 22 縣市；三個分頁存在；地圖 22 個標記、底圖與 Popup 正常。
 * 實測時段由 18:00 切換為 06:00，南投最高溫由 31°C 更新為 35°C，標記與 Popup 同步更新。
 * Docker 實機建置仍未驗證，既有 SSL fallback 限制仍保留。
+
+### Phase 4 Milestone 2 — 島嶼氣象（2026-09-30）
+* 使用者要求擴充觀測站、行政區邊界、美化資訊框；此需求取代 Milestone 1 的「不加入多邊形」限制。
+* 四分頁重設：天氣地圖／全台總覽／縣市預報／即時測站；新增 ui.py 管理一致卡片與視覺風格。
+* 接入 O-A0001-001 全測站逐時觀測，實測取得 876 站；保留 WGS84 真實座標、氣溫、濕度、風速、當日雨量、觀測時間。
+* 預報加入 Wx / PoP / CI / endTime，改為依 startTime 對齊元素，避免依陣列位置配錯時段。
+* database.py 原地增欄且保留既有預報；StationObservations 原子替換最新有效快照，空回應不清除舊資料。SQL 仍全部集中於 database.py。
+* geography.py 解碼隨附 Taiwan Atlas 縣市界線，台／臺名稱正規化；22 縣市皆有閉合多邊形，含離島。
+* 地圖點選連動縣市選單與資訊卡、邊界高亮／聚焦；測站群集與站點 Popup；實測與預報明確分開。
+* 新增全台溫度區間圖（修正原本堆疊氣溫）、降雨排序、測站搜尋與 CSV 下載。
+* 雲端預報快取 1 小時，測站快取 10 分鐘（含失敗冷卻）；超過 2 小時或未知時間觀測顯示過期，圖層預設排除。
+* 17 項離線 unittest / AppTest 通過；本機真實同步 66 筆預報與 876 個測站；正式部署前進行瀏覽器點選檢查。
+* Docker 加入 assets 與主題設定；本機 Docker 不可用，容器建置仍未驗證。

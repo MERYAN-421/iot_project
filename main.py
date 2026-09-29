@@ -74,6 +74,12 @@ def main():
     latest_df = get_latest_forecasts(periods=1)
     print(latest_df.head(5).to_string(index=False))
 
+    from sync_service import sync_observations
+    try:
+        print(f"\nStation observations synchronized: {sync_observations()}")
+    except Exception as exc:
+        print(f"Station sync unavailable ({type(exc).__name__}); previous snapshot retained.")
+
 
 if __name__ == "__main__":
     main()
