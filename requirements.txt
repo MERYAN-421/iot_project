@@ -4,3 +4,5 @@ python-dotenv
 certifi
 truststore
 streamlit
+folium
+streamlit-folium

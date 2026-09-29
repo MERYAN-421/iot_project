@@ -1,3 +1,5 @@
+> 進度註記（2026-09-30）：本文件保留初期規劃；最新進度以 ../PROJECT_CONTENT.md 為準。Phase 4 地圖已完成，正在準備公開部署。
+
 # PROJECT_CONTENT
 
 ## 1. Project Name

@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+.streamlit/secrets.toml
+*.db
+*.db-*
+*.log
+__pycache__
+.venv
+venv
+tests
+myPlan

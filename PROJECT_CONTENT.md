@@ -13,7 +13,7 @@
 
 後續將加入 Folium 台灣地圖視覺化，並探索 AI 分析與其他氣象應用。
 
-專案資料夾：`D:\AIlot\L3_CWA`
+專案資料夾：`C:\master\cloud_course\iot_project`
 GitHub Repository：`MERYAN-421/iot_project`
 
 ---
@@ -24,7 +24,7 @@ GitHub Repository：`MERYAN-421/iot_project`
 * Language: Python 3.14
 * Version Control: Git
 * Remote Repository: GitHub
-* AI Coding Tool: Antigravity
+* AI Coding Tool: Codex（接續 Antigravity 既有成果）
 * AI Planning / Review: ChatGPT
 
 ---
@@ -117,8 +117,9 @@ L3_CWA/
 
 ## 7. Current Task
 
-Phase 3.1 已完成。
-下一步：Phase 4 — Folium 台灣地圖視覺化整合（或 Phase 3 介面與指標進階擴充）。
+Phase 4 Milestone 1 已完成並通過測試。
+目前：準備 Streamlit Community Cloud 公開展示部署，等待帳號登入與部署完成。
+使用 cloud_app.py 作為雲端入口；接受展示環境 SQLite 歷史資料不永久保存。
 
 ---
 
@@ -131,9 +132,9 @@ Phase 3.1 已完成。
 * [x] 測試資料流程 (66 rows, 22 regions 驗證通過)
 * [x] Phase 2: SQLite 儲存 (weather.db / TemperatureForecasts - Milestone 1, 2.1 & 2.2 完成)
 * [x] Phase 3: Streamlit Web App (Milestone 1 & 3.1 全台總覽完成)
-* [ ] Phase 4: Folium 台灣地圖
-* [ ] 建立 Docker 環境
-* [ ] 撰寫 README
+* [x] Phase 4: Folium 台灣地圖
+* [ ] Docker 實機驗證（Dockerfile / compose.yaml 已完成；本機尚無 Docker）
+* [x] 撰寫 README
 * [ ] 建立 GitHub Demo / deployment
 
 ---
@@ -144,7 +145,7 @@ Phase 3.1 已完成。
 
 * Git 預設 branch 使用 `main`
 * GitHub 作為主要 remote repository
-* Antigravity 負責主要 coding
+* Codex 接續 Antigravity，負責本機實作、測試與部署準備
 * ChatGPT 負責規劃、解釋、review 與 debugging
 * `project_content.md` 作為 AI 之間共享專案上下文的主要文件
 * API Endpoint：`F-C0032-001`（36小時天氣預報，含 MinT / MaxT）
@@ -236,3 +237,18 @@ Phase 3.1 已完成。
 
 
 
+
+### Phase 4 Milestone 1 — Taiwan Map（2026-09-30）
+* 新增 weather_map.py，保存 22 縣市代表座標並建立 Folium 地圖，含離島初始視野、Tooltip / Popup、最高溫四色分級與缺值灰色。
+* app.py 新增「🌏 台灣地圖」第三分頁，使用 get_available_forecast_times / get_forecasts_by_time 選取時段；列出缺少或無座標的縣市。
+* database.py 新增時段清單查詢；連線改以 closing 確實關閉，修正 Windows 檔案鎖；預設 DB 路徑固定在程式目錄，支援 WEATHER_DB_PATH。
+* 已確認 folium / streamlit-folium 依賴存在；未加入多邊形與 AI。
+* 7 項 unittest / Streamlit AppTest 通過：時段與 22 縣市、溫度边界與缺值、標記、分頁切換、空資料與雲端快取／失敗處理。
+* HTTP 200，瀏覽器確認底圖、標記與 Popup 正常；真實 CWA → 臨時 SQLite 同步 66 筆成功，未覆寫本機資料。
+
+### 部署準備（2026-09-30）
+* README.md 包含本機、Docker、Cloud 操作步驟與資料語意。
+* cloud_app.py / sync_service.py 支援雲端首次造訪同步；成功結果快取一小時，後續造訪再觸發更新；失敗時顯示既有資料且不輸出含金鑰的請求例外。
+* Dockerfile / compose.yaml / .dockerignore：非 root 容器、持久 volume、獨立同步服務與健康檢查；Docker 未安装，尚未實際建置。
+* 使用者選擇 Streamlit Community Cloud 展示，接受歷史 SQLite 在重啟後可能遺失；公開網址尚未部署完成。
+* 既有 SSL fallback 保留：本次 CWA 驗證失敗後以 verify=False 成功，這仍是待改善的既有限制，不能視為完整驗證連線。

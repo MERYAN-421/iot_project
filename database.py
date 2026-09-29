@@ -26,10 +26,13 @@ Data Model Semantics:
   - Revisions of the same period by CWA update minT/maxT in-place (no revision versioning).
 """
 
+import os
 import sqlite3
+from pathlib import Path
+from contextlib import closing
 import pandas as pd
 
-DEFAULT_DB_PATH = "weather.db"
+DEFAULT_DB_PATH = os.environ.get("WEATHER_DB_PATH", str(Path(__file__).with_name("weather.db")))
 
 
 def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
@@ -49,7 +52,7 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
         UNIQUE (regionName, startTime)
     );
     """
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         cursor = conn.cursor()
         cursor.execute(create_table_sql)
 
@@ -116,7 +119,7 @@ def save_forecasts(df: pd.DataFrame, db_path: str = DEFAULT_DB_PATH) -> dict:
         for _, row in df.iterrows()
     ]
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         cursor = conn.cursor()
 
         # Fetch existing records to categorize inserted / changed / unchanged
@@ -171,7 +174,7 @@ def get_forecasts(db_path: str = DEFAULT_DB_PATH, limit: int = 10) -> pd.DataFra
     ORDER BY id DESC
     LIMIT ?;
     """
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         df = pd.read_sql_query(query_sql, conn, params=(limit,))
     return df
 
@@ -180,7 +183,7 @@ def get_total_count(db_path: str = DEFAULT_DB_PATH) -> int:
     """
     Returns the total number of records in the TemperatureForecasts table.
     """
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM TemperatureForecasts;")
         count = cursor.fetchone()[0]
@@ -198,7 +201,7 @@ def get_forecasts_by_region(region_name: str, db_path: str = DEFAULT_DB_PATH) ->
     WHERE regionName = ?
     ORDER BY startTime ASC;
     """
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         df = pd.read_sql_query(query_sql, conn, params=(region_name,))
     return df
 
@@ -221,7 +224,7 @@ def get_latest_forecasts(periods: int = 3, db_path: str = DEFAULT_DB_PATH) -> pd
     JOIN latest_periods lp ON f.startTime = lp.startTime
     ORDER BY f.startTime ASC, f.regionName ASC;
     """
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         df = pd.read_sql_query(query_sql, conn, params=(periods,))
     return df
 
@@ -236,7 +239,7 @@ def get_all_regions(db_path: str = DEFAULT_DB_PATH) -> list[str]:
     FROM TemperatureForecasts
     ORDER BY regionName ASC;
     """
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         cursor = conn.cursor()
         cursor.execute(query_sql)
         regions = [row[0] for row in cursor.fetchall()]
@@ -255,8 +258,15 @@ def get_forecasts_by_time(start_time: str, db_path: str = DEFAULT_DB_PATH) -> pd
     WHERE startTime = ?
     ORDER BY regionName ASC;
     """
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         df = pd.read_sql_query(query_sql, conn, params=(start_time,))
     return df
 
+
+def get_available_forecast_times(db_path: str = DEFAULT_DB_PATH) -> list[str]:
+    """Return distinct forecast start times, newest first."""
+    with closing(sqlite3.connect(db_path)) as conn:
+        return [row[0] for row in conn.execute(
+            "SELECT DISTINCT startTime FROM TemperatureForecasts ORDER BY startTime DESC"
+        )]
 

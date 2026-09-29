@@ -1,0 +1,19 @@
+services:
+  dashboard:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - weather-data:/data
+    restart: unless-stopped
+  sync:
+    build: .
+    command: ["python", "-X", "utf8", "main.py"]
+    env_file: .env
+    volumes:
+      - weather-data:/data
+    profiles: ["tools"]
+    healthcheck:
+      disable: true
+volumes:
+  weather-data:

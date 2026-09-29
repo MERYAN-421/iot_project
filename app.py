@@ -2,7 +2,7 @@
 app.py
 ------
 Streamlit web dashboard for Taiwan Weather Forecast.
-Phase 3.1: Nationwide Overview (全台總覽) and Regional Detail (縣市查詢) tabs.
+Nationwide Overview, Regional Detail, and Taiwan Map tabs.
 
 Architectural rule:
   No direct SQLite queries in app.py. All database access is routed through database.py.
@@ -10,7 +10,12 @@ Architectural rule:
 
 import streamlit as st
 import pandas as pd
+from streamlit_folium import st_folium
+from weather_map import TAIWAN_REGION_COORDINATES, build_weather_map
 from database import (
+    init_db,
+    get_available_forecast_times,
+    get_forecasts_by_time,
     get_all_regions,
     get_forecasts_by_region,
     get_latest_forecasts,
@@ -29,6 +34,7 @@ st.title("🌤️ 台灣天氣預報 Web Dashboard")
 st.caption("基於中央氣象署 (CWA) Open Data API 與 SQLite 歷史預報資料庫")
 
 # 1. Fetch all regions dynamically from database
+init_db()
 regions = get_all_regions()
 
 if not regions:
@@ -46,7 +52,7 @@ selected_region = st.sidebar.selectbox(
 )
 
 # 3. Create Navigation Tabs
-tab_overview, tab_detail = st.tabs(["🗺️ 全台總覽", "🏙️ 縣市查詢"])
+tab_overview, tab_detail, tab_map = st.tabs(["🗺️ 全台總覽", "🏙️ 縣市查詢", "🌏 台灣地圖"])
 
 # ==========================================
 # Tab 1: 全台總覽 (Nationwide Overview)
@@ -112,7 +118,7 @@ with tab_overview:
                 "created_at": "建立時間 (Created At)",
             }
         )
-        st.dataframe(display_overview, use_container_width=True, hide_index=True)
+        st.dataframe(display_overview, width="stretch", hide_index=True)
 
 
 # ==========================================
@@ -174,5 +180,45 @@ with tab_detail:
             }
         )
 
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        st.dataframe(display_df, width="stretch", hide_index=True)
 
+
+with tab_map:
+    st.subheader("🌏 台灣各縣市預報地圖")
+    available_times = get_available_forecast_times()
+    if not available_times:
+        st.info("目前沒有可顯示的預報時段，請先同步資料。")
+    else:
+        selected_time = st.selectbox(
+            "🕒 請選擇預報時段 / Select Forecast Period",
+            options=available_times,
+            key="map_forecast_time",
+        )
+        map_df = get_forecasts_by_time(selected_time)
+        if map_df.empty:
+            st.warning("此時段沒有預報資料，請選擇其他時段。")
+        else:
+            known = set(TAIWAN_REGION_COORDINATES)
+            present = set(map_df["regionName"])
+            missing = sorted(known - present)
+            unknown = sorted(present - known)
+            if missing:
+                st.warning(f"此時段缺少縣市資料：{'、'.join(missing)}")
+            if unknown:
+                st.warning(f"以下地區沒有對應座標，未顯示標記：{'、'.join(unknown)}")
+            st.caption(
+                "依最高溫配色：🔴 炎熱 ≥32°C｜🟠 溫暖 28–<32°C｜"
+                "🟢 舒適 24–<28°C｜🔵 涼爽 <24°C｜灰色：最高溫無資料"
+            )
+            st.caption(
+                f"預報開始時間：{selected_time}（臺灣時間）｜"
+                f"顯示 {len(present & known)} / 22 縣市。"
+                "標記為縣市代表位置，非測站位置；可縮放並點擊查看氣溫。"
+            )
+            st_folium(
+                build_weather_map(map_df),
+                use_container_width=True,
+                height=550,
+                returned_objects=[],
+                key=f"weather_map_{selected_time}",
+            )
