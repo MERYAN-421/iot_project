@@ -84,6 +84,8 @@ L3_CWA/
 ├── config.py             ← 從 .env 載入 CWA_API_KEY
 ├── cwa_api.py            ← 呼叫 CWA F-C0032-001 API，回傳 JSON
 ├── data_parser.py        ← 解析 JSON，提取 MinT/MaxT → Pandas DataFrame
+├── database.py           ← SQLite 資料庫操作 (init_db, save_forecasts, get_forecasts, get_total_count)
+├── weather.db            ← 本機 SQLite 資料庫 (不進 Git)
 ├── main.py               ← 程式進入點
 ├── PROJECT_CONTENT.md    ← AI context 文件 (本文件)
 └── myPlan/
@@ -104,13 +106,14 @@ L3_CWA/
 * 建立 `project_content.md` 與 `project_plan.md`
 * **Phase 1 完成：** CWA API → JSON → Pandas DataFrame (66 rows, 22 regions)
 * **Phase 1.5 完成：** SSL 調查與修正、程式碼清理、文件更新
+* **Phase 2 Milestone 1 完成：** SQLite 整合 (`database.py`、`weather.db`、`TemperatureForecasts` 表建立、66 筆資料存入與查詢驗證)
 
 ---
 
 ## 7. Current Task
 
-Phase 1 與 Phase 1.5 已完成。
-下一步：Phase 2 — SQLite 資料庫整合。
+Phase 2 Milestone 1 已完成。
+下一步：Phase 2 後續規劃（去重/Upsert 機制、資料清洗與查詢介面）或進入 Phase 3（Streamlit Web App）。
 
 ---
 
@@ -121,7 +124,7 @@ Phase 1 與 Phase 1.5 已完成。
 * [x] 設計 Python 專案結構
 * [x] 建立第一版可執行程式 (Phase 1)
 * [x] 測試資料流程 (66 rows, 22 regions 驗證通過)
-* [ ] Phase 2: SQLite 儲存 (weather.db / TemperatureForecasts)
+* [x] Phase 2: SQLite 儲存 (weather.db / TemperatureForecasts - Milestone 1 完成)
 * [ ] Phase 3: Streamlit Web App
 * [ ] Phase 4: Folium 台灣地圖
 * [ ] 建立 Docker 環境
@@ -145,6 +148,11 @@ Phase 1 與 Phase 1.5 已完成。
 * SSL 處理策略：先嘗試 certifi，失敗後 fallback 至 `verify=False` 並印出警告
   * 測試結果：`verify=True`、`certifi`、`truststore` 皆因 CWA 憑證缺少 SKI (RFC 5280) 而失敗
   * `verify=False` 為目前唯一可用方案，待 CWA 更新憑證後應改回 `verify=True`
+* 資料庫設計：
+  * 資料庫檔案：`weather.db`（已列入 `.gitignore`）
+  * 資料表：`TemperatureForecasts` (`id` INTEGER PK AUTOINCREMENT, `regionName` TEXT, `startTime` TEXT, `minT` INTEGER, `maxT` INTEGER, `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+  * Milestone 1 寫入行為為 append 模式；每次執行 `main.py` 會新增 66 筆資料
+  * 查詢預設採 `ORDER BY id DESC` 以利驗證最新插入的預報資料
 
 ---
 
@@ -167,3 +175,11 @@ Phase 1 與 Phase 1.5 已完成。
 * 重構 `cwa_api.py`：移除不準確描述、改為 try/except fallback 結構、移除全域警告抑制
 * 修正 `data_parser.py`：移除未使用的變數 `i`
 * 更新 `PROJECT_CONTENT.md` 以反映實際進度
+
+### Phase 2 Milestone 1 — SQLite Integration
+* 建立 `database.py`，封裝 `init_db`、`save_forecasts`、`get_forecasts` 與 `get_total_count`
+* 建立資料庫 `weather.db` 與資料表 `TemperatureForecasts` (含自動遞增 `id` 與 `created_at` timestamp)
+* 更新 `main.py` 整合端到端流程：API 取得 → 解析 → 存入 SQLite → 查詢最新 5 筆 sample 驗證
+* 實施 append 模式並驗證 66 筆資料成功寫入與讀出 (`ORDER BY id DESC`)
+* 確認 `weather.db` 已被 `.gitignore` 排除不進 Git
+
