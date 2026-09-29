@@ -1,5 +1,7 @@
 # 🌤️ Taiwan Weather Forecast｜台灣天氣預報
 
+公開展示：[開啟台灣天氣預報](https://iotproject-hpwvgzzmi2zm7wbuxkerht.streamlit.app/)
+
 使用中央氣象署 F-C0032-001 的 36 小時預報，呈現全台 22 縣市最低／最高氣溫。
 
 - **全台總覽**：極端溫度（含並列縣市）、氣溫比較圖與資料表。
@@ -42,7 +44,7 @@ API Key 可向 [中央氣象署開放資料平台](https://opendata.cwa.gov.tw/)
 
 Community Cloud 作為展示環境：SQLite 不作永久保存保證，重啟或重新部署後歷史可能遺失。
 需要永久歷史時，改用具持久磁碟的主機／Docker volume。
-目前倉庫不含正式公開網址，須完成登入與部署後才會產生。
+已於 2026-09-30 部署完成；公開網址見本文件頂端。
 
 官方操作說明：[部署](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/deploy)、
 [Secrets](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/secrets-management)。

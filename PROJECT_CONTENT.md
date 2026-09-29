@@ -118,7 +118,7 @@ L3_CWA/
 ## 7. Current Task
 
 Phase 4 Milestone 1 已完成並通過測試。
-目前：準備 Streamlit Community Cloud 公開展示部署，等待帳號登入與部署完成。
+Streamlit Community Cloud 公開展示已部署並完成瀏覽器驗證：https://iotproject-hpwvgzzmi2zm7wbuxkerht.streamlit.app/
 使用 cloud_app.py 作為雲端入口；接受展示環境 SQLite 歷史資料不永久保存。
 
 ---
@@ -135,7 +135,7 @@ Phase 4 Milestone 1 已完成並通過測試。
 * [x] Phase 4: Folium 台灣地圖
 * [ ] Docker 實機驗證（Dockerfile / compose.yaml 已完成；本機尚無 Docker）
 * [x] 撰寫 README
-* [ ] 建立 GitHub Demo / deployment
+* [x] 建立 GitHub Demo / deployment（Streamlit Community Cloud）
 
 ---
 
@@ -250,5 +250,11 @@ Phase 4 Milestone 1 已完成並通過測試。
 * README.md 包含本機、Docker、Cloud 操作步驟與資料語意。
 * cloud_app.py / sync_service.py 支援雲端首次造訪同步；成功結果快取一小時，後續造訪再觸發更新；失敗時顯示既有資料且不輸出含金鑰的請求例外。
 * Dockerfile / compose.yaml / .dockerignore：非 root 容器、持久 volume、獨立同步服務與健康檢查；Docker 未安装，尚未實際建置。
-* 使用者選擇 Streamlit Community Cloud 展示，接受歷史 SQLite 在重啟後可能遺失；公開網址尚未部署完成。
+* 使用者選擇 Streamlit Community Cloud 展示，接受歷史 SQLite 在重啟後可能遺失；公開網址已完成：https://iotproject-hpwvgzzmi2zm7wbuxkerht.streamlit.app/
 * 既有 SSL fallback 保留：本次 CWA 驗證失敗後以 verify=False 成功，這仍是待改善的既有限制，不能視為完整驗證連線。
+
+### 公開部署驗證（2026-09-30）
+* 使用者完成 Streamlit Community Cloud 部署；未登入的瀏覽器可直接開啟公開網址。
+* 全台總覽顯示 22 縣市；三個分頁存在；地圖 22 個標記、底圖與 Popup 正常。
+* 實測時段由 18:00 切換為 06:00，南投最高溫由 31°C 更新為 35°C，標記與 Popup 同步更新。
+* Docker 實機建置仍未驗證，既有 SSL fallback 限制仍保留。
